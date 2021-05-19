@@ -1,6 +1,5 @@
 ###########################Wazuh Manager############
 nano /var/ossec/etc/ossec.conf
-<ossec_config>
   <command>
     <name>yara</name>
     <executable>yara.sh</executable>
@@ -13,7 +12,7 @@ nano /var/ossec/etc/ossec.conf
     <location>local</location>
     <rules_id>550,554</rules_id>
   </active-response>
-</ossec_config>
+
 
 
 nano /var/ossec/etc/decoders/yara_decoders.xml
