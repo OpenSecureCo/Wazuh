@@ -116,3 +116,7 @@ then
 fi
 
 exit 1;
+
+
+chown root:ossec yara.sh
+chmod 750 yara.sh
