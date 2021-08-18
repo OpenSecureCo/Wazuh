@@ -1,0 +1,99 @@
+-----------Enable GPO---------------------
+Module Logging
+Module logging records pipeline execution details as PowerShell executes, including variable initialization and command invocations. Module logging will record portions of scripts, some de-obfuscated code, and some data formatted for output. This logging will capture some details missed by other PowerShell logging sources, though it may not reliably capture the commands executed. Module logging has been available since PowerShell 3.0. Module logging events are written to Event ID (EID) 4103.
+
+While module logging generates a large volume of events (the execution of the popular Invoke-Mimikatz script generated 2,285 events resulting in 7 MB of logs during testing), these events record valuable output not captured in other sources.
+
+To enable module logging:
+
+1.     In the “Windows PowerShell” GPO settings, set “Turn on Module Logging” to enabled.
+2.     In the “Options” pane, click the button to show Module Name.
+3.     In the Module Names window, enter * to record all modules.
+    a.     Optional: To log only specific modules, specify them here. (Note: this is not recommended.)
+4.     Click “OK” in the “Module Names” Window.
+5.     Click “OK” in the “Module Logging” Window.
+
+Alternately, setting the following registry values will have the same effect:
+
+»      HKLM\SOFTWARE\Wow6432Node\Policies\Microsoft\Windows\PowerShell\ModuleLogging → EnableModuleLogging = 1
+»      HKLM\SOFTWARE\Wow6432Node\Policies\Microsoft\Windows\PowerShell\ModuleLogging \ModuleNames → * = *
+
+Script Block Logging
+Script block logging records blocks of code as they are executed by the PowerShell engine, thereby capturing the full contents of code executed by an attacker, including scripts and commands. Due to the nature of script block logging, it also records de-obfuscated code as it is executed. For example, in addition to recording the original obfuscated code, script block logging records the decoded commands passed with PowerShell’s -EncodedCommand argument, as well as those obfuscated with XOR, Base64, ROT13, encryption, etc., in addition to the original obfuscated code. Script block logging will not record output from the executed code. Script block logging events are recorded in EID 4104. Script blocks exceeding the maximum length of an event log message are fragmented into multiple entries. A script is available to parse script block logs and reassemble fragmented blocks (see reference 5).
+
+While not available in PowerShell 4.0, PowerShell 5.0 will automatically log code blocks if the block’s contents match on a list of suspicious commands or scripting techniques, even if script block logging is not enabled. These suspicious blocks are logged at the “warning” level in EID 4104, unless script block logging is explicitly disabled. This feature ensures that some forensic data is logged for known-suspicious activity, even if logging is not enabled, but it is not considered to be a security feature by Microsoft. Enabling script block logging will capture all activity, not just blocks considered suspicious by the PowerShell process. This allows investigators to identify the full scope of attacker activity. The blocks that are not considered suspicious will also be logged to EID 4104, but with “verbose” or “information” levels.
+
+Script block logging generates fewer events than module logging (Invoke-Mimikatz generated 116 events totaling 5 MB) and records valuable indicators for alerting in a SIEM or log monitoring platform.
+
+Group Policy also offers an option to “Log script block execution start / stop events”. This option records the start and stop of script blocks, by script block ID, in EIDs 4105 and 4106. This option may provide additional forensic information, as in the case of a PowerShell script executing over a long period, but it generates a prohibitively large number of events (96,458 events totaling 50 MB per execution of Invoke-Mimikatz) and is not recommended for most environments.
+
+To enable script block logging:
+
+1.     In the “Windows PowerShell” GPO settings, set “Turn on PowerShell Script Block Logging” to enabled.
+
+Alternately, setting the following registry value will enable logging:
+
+»      HKLM\SOFTWARE\Wow6432Node\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging → EnableScriptBlockLogging = 1
+
+Transcription
+Transcription creates a unique record of every PowerShell session, including all input and output, exactly as it appears in the session. Transcripts are written to text files, broken out by user and session. Transcripts also contain timestamps and metadata for each command in order to aid analysis. However, transcription records only what appears in the PowerShell terminal, which will not include the contents of executed scripts or output written to other destinations such as the file system.
+
+PowerShell transcripts are automatically named to prevent collisions, with names beginning with “PowerShell_transcript”. By default, transcripts are written to the user’s documents folder, but can be configured to any accessible location on the local system or on the network. The best practice is to write transcripts to a remote, write-only network share, where defenders can easily review the data and attackers cannot easily delete them (see reference 2 below). Transcripts are very storage-efficient (less than 6 KB per execution of Invoke-Mimikatz), easily compressed, and can be reviewed using standard tools like grep.
+
+To enable transcription:
+
+1.     In the “Windows PowerShell” GPO settings, set “Turn on PowerShell Transcription” to enabled.
+2.     Check the “Include invocation headers” box, in order to record a timestamp for each command executed.
+3.     Optionally, set a centralized transcript output directory.
+
+This directory should be a write-only, restricted network share that security personnel can access. If no output directory is specified, the transcript files will be created under the user’s documents directory.
+
+Alternately, setting the following registry values will enable logging:
+
+
+»       HKLM\SOFTWARE\Wow6432Node\Policies\Microsoft\Windows\PowerShell\Transcription → EnableTranscripting = 1
+»       HKLM\SOFTWARE\Wow6432Node\Policies\Microsoft\Windows\PowerShell\Transcription → EnableInvocationHeader = 1
+»       HKLM\SOFTWARE\Wow6432Node\Policies\Microsoft\Windows\PowerShell\Transcription → OutputDirectory = “” (Enter path. Empty = default)
+
+
+--------Wazuh Manager----------
+ossec.conf in the agent, or agent.conf through Centralized Configuration
+
+        <localfile>
+              <location>Microsoft-Windows-PowerShell/Operational</location>
+          <log_format>eventchannel</log_format>
+      </localfile>
+      
+ Powershell Rules Configuration 
+ 
+ <group name="windows-custom,">
+
+  <rule id="100535" level="5">
+    <if_sid>60009</if_sid>
+    <field name="win.system.providerName">^Microsoft-Windows-PowerShell$</field>
+    <group>powershell,</group>
+    <description>Powershell Information EventLog</description>
+  </rule>
+
+  <rule id="100536" level="7">
+    <if_sid>60010</if_sid>
+    <field name="win.system.providerName">^Microsoft-Windows-PowerShell$</field>
+    <group>powershell,</group>
+    <description>Powershell Warning EventLog</description>
+  </rule>
+
+  <rule id="100537" level="10">
+    <field name="win.system.providerName">^Microsoft-Windows-PowerShell$</field>
+    <field name="win.system.severityValue">^ERROR$</field>
+    <group>powershell,</group>
+    <description>Powershell Error EventLog</description>
+  </rule>
+
+  <rule id="100538" level="13">
+    <if_sid>60012</if_sid>
+    <field name="win.system.providerName">^Microsoft-Windows-PowerShell$</field>
+    <group>powershell,</group>
+    <description>Powershell Critical EventLog</description>
+  </rule>
+
+</group>
