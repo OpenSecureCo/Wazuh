@@ -81,22 +81,4 @@
       <options>no_full_log</options>
 		<description>Sysmon - Event 15: FileCreateStreamHash.</description>
 	</rule>
-	<rule id="101116" level="0">
-		<if_sid>101100</if_sid>
-		<match>sjca.prod.e2open.com</match>
-		<description>Sysmon - Event 22: DNS Query to *.sjca.prod.e2open.com</description>
-		<options>no_full_log</options>
-	</rule>
-	<rule id="101117" level="0">
-		<if_sid>101100</if_sid>
-		<match>googleapis.com</match>
-		<description>Sysmon - Event 22: DNS Query to googleapis.com</description>
-		<options>no_full_log</options>
-	</rule>
-	<rule id="101118" level="0">
-		<if_sid>101100</if_sid>
-		<match>google.com</match>
-		<description>Sysmon - Event 22: DNS Query to google.com</description>
-		<options>no_full_log</options>
-	</rule>
 </group>
