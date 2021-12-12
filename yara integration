@@ -1,37 +1,50 @@
 ###########################Wazuh Manager############
 nano /var/ossec/etc/ossec.conf
+ <ossec_config>
   <command>
     <name>yara</name>
     <executable>yara.sh</executable>
     <expect>filename</expect>
-    <extra_args>-yara_path /path/to/yara -yara_rules /path/to/rules</extra_args>
+    <extra_args>-yara_path /usr/bin -yara_rules /opt/yara_rules/rules/index.yar</extra_args>
     <timeout_allowed>no</timeout_allowed>
   </command>
+  
   <active-response>
     <command>yara</command>
     <location>local</location>
     <rules_id>550,554</rules_id>
   </active-response>
 
+</ossec_config>
+
+
 
 
 nano /var/ossec/etc/decoders/yara_decoders.xml
 
+<!--
+ - YARA decoders
+ - Created by Wazuh, Inc.
+ - Copyright (C) 2015-2020, Wazuh Inc.
+ - This program is a free software; you can redistribute it and/or modify it under the terms of GPLv2.
+-->
+ 
 <decoder name="yara">
   <prematch>wazuh-yara: </prematch>
 </decoder>
-
+ 
 <decoder name="yara">
   <parent>yara</parent>
-  <regex offset="after_parent">info: (\S+) (\.+)</regex>
-  <order>yara_rule, file_path</order>
+  <regex>wazuh-yara: (\S+) - Scan result: (\S+) (\S+)</regex>
+  <order>log_type, yara_rule, yara_scanned_file</order>
 </decoder>
 
 <decoder name="yara">
   <parent>yara</parent>
-  <regex offset="after_parent">error: (\.+)</regex>
-  <order>error_message</order>
+  <regex>wazuh-yara: (\S+) - Yara active response error. (\.+)</regex>
+  <order>log_type, error_message</order>
 </decoder>
+
 
 
 nano /var/ossec/etc/rules/yara_rules.xml
@@ -41,13 +54,13 @@ nano /var/ossec/etc/rules/yara_rules.xml
         <decoded_as>yara</decoded_as>
         <description>YARA rules grouped.</description>
     </rule>
-
+ 
     <rule id="100101" level="5">
         <if_sid>100100</if_sid>
         <field name="error_message">\.+</field>
         <description>YARA error detected.</description>
     </rule>
-
+ 
     <rule id="100102" level="10">
         <if_sid>100100</if_sid>
         <field name="yara_rule">\.+</field>
@@ -56,37 +69,36 @@ nano /var/ossec/etc/rules/yara_rules.xml
 </group>
 
 
+
 ##################Wazuh Agent####################
 
 nano /var/ossec/active-response/bin/yara.sh
 
 #!/bin/bash
+# Wazuh - Yara active response
+# Copyright (C) 2015-2021, Wazuh Inc.
+#
+# This program is free software; you can redistribute it
+# and/or modify it under the terms of the GNU General Public
+# License (version 2) as published by the FSF - Free Software
+# Foundation.
 #------------------------- Gather parameters -------------------------#
 
 # Static active response parameters
-FILENAME=$8
 LOCAL=`dirname $0`
 
 # Extra arguments
-YARA_PATH=
-YARA_RULES=
-
-while [ "$1" != "" ]; do
-  case $1 in
-    -yara_path)       shift
-                      YARA_PATH=$1
-                      ;;
-    -yara_rules)      shift
-                      YARA_RULES=$1
-                      ;;
-    * )               shift
-  esac
-  shift
-done
+read -r INPUT_JSON
+YARA_PATH=$(echo $INPUT_JSON | jq -r .parameters.extra_args[1])
+YARA_RULES=$(echo $INPUT_JSON | jq -r .parameters.extra_args[3])
+FILENAME=$(echo $INPUT_JSON | jq -r .parameters.alert.syscheck.path)
+COMMAND=$(echo $INPUT_JSON | jq -r .command)
 
 # Move to the active response folder
 cd $LOCAL
 cd ../
+#time=$(date)
+#echo "$time  $YARA_PATH $YARA_RULES" >> /home/ghaem.arasteh/printinput.txt
 
 # Set LOG_FILE path
 PWD=`pwd`
@@ -96,22 +108,36 @@ LOG_FILE="${PWD}/../logs/active-responses.log"
 
 if [[ ! $YARA_PATH ]] || [[ ! $YARA_RULES ]]
 then
-    echo "wazuh-yara: error: Yara path and rules parameters are mandatory." >> ${LOG_FILE}
-    exit
+  echo "wazuh-yara: ERROR - Yara active response error. Yara path and rules parameters are mandatory." >> ${LOG_FILE}
+  exit
 fi
 
+#------------------------ Analyze command -------------------------#
+if [ ${COMMAND} = "add" ]
+then
+  # Send control message to execd
+  printf '{"version":1,"origin":{"name":"yara","module":"active-response"},"command":"check_keys", "parameters":{"keys":[]}}\n'
+
+  read RESPONSE
+  COMMAND2=$(echo $RESPONSE | jq -r .command)
+  if [ ${COMMAND2} != "continue" ]
+  then
+    echo "wazuh-yara: INFO - Yara active response aborted." >> ${LOG_FILE}
+    exit 1;
+  fi
+fi
 
 #------------------------- Main workflow --------------------------#
 
-# Execute YARA scan on the specified filename
-yara_output=$(${YARA_PATH}/yara -w -r $YARA_RULES $FILENAME)
+# Execute Yara scan on the specified filename
+yara_output="$("${YARA_PATH}"/yara -w -r "$YARA_RULES" "$FILENAME")"
 
 if [[ $yara_output != "" ]]
 then
-    # Iterate every detected rule and append it to the LOG_FILE
-    while read -r line; do
-        echo "wazuh-yara: info: $line" >> ${LOG_FILE}
-    done <<< "$yara_output"
+  # Iterate every detected rule and append it to the LOG_FILE
+  while read -r line; do
+  echo "wazuh-yara: INFO - Scan result: $line" >> ${LOG_FILE}
+  done <<< "$yara_output"
 fi
 
 exit 1;
